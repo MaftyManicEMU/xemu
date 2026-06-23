@@ -23,6 +23,7 @@
 #include "data/controller_mask_s.png.h"
 #include "data/logo_sdf.png.h"
 #include "data/xemu_64x64.png.h"
+#include "data/xblive_glyph.png.h"
 #include "data/xmu_mask.png.h"
 #include "notifications.hh"
 #include "stb_image.h"
@@ -34,7 +35,8 @@
 #include "ui/shader/xemu-logo-frag.h"
 
 Fbo *controller_fbo, *xmu_fbo, *logo_fbo;
-GLuint g_controller_duke_tex, g_controller_s_tex, g_logo_tex, g_icon_tex, g_xmu_tex;
+GLuint g_controller_duke_tex, g_controller_s_tex, g_logo_tex, g_icon_tex,
+       g_xblive_glyph_tex, g_xmu_tex;
 
 enum class ShaderType {
     Blit,
@@ -455,6 +457,8 @@ void InitCustomRendering(void)
     logo_fbo = new Fbo(512, 512);
 
     g_icon_tex = LoadTextureFromMemory(xemu_64x64_data, xemu_64x64_size, false);
+    g_xblive_glyph_tex =
+        LoadTextureFromMemory(xblive_glyph_data, xblive_glyph_size, false);
 
     g_framebuffer_shader = NewDecalShader(ShaderType::BlitGamma);
 }

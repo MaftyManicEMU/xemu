@@ -50,6 +50,7 @@
 #include "welcome.hh"
 #include "menubar.hh"
 #include "compat.hh"
+#include "xblive-service.hh"
 #if defined(_WIN32)
 #include "update.hh"
 #endif
@@ -65,6 +66,17 @@ static int g_vsync;
 static GLuint g_tex;
 static bool g_flip_req;
 
+static void XBLiveShutdownNotifier(Notifier *notifier, void *data)
+{
+    (void)notifier;
+    (void)data;
+    XBLiveService::Get().Shutdown();
+}
+
+static Notifier g_xblive_shutdown_notifier = {
+    XBLiveShutdownNotifier,
+};
+static bool g_xblive_shutdown_notifier_registered;
 
 static void InitializeStyle()
 {
@@ -156,11 +168,17 @@ void xemu_hud_init(SDL_Window* window, void* sdl_gl_context)
     g_last_scale = g_viewport_mgr.m_scale;
     InitializeStyle();
     g_main_menu.SetNextViewIndex(g_config.general.last_viewed_menu_index);
+    XBLiveService::Get().LoadSession();
+    if (!g_xblive_shutdown_notifier_registered) {
+        qemu_register_shutdown_notifier(&g_xblive_shutdown_notifier);
+        g_xblive_shutdown_notifier_registered = true;
+    }
     first_boot_window.is_open = g_config.general.show_welcome;
 }
 
 void xemu_hud_cleanup(void)
 {
+    XBLiveService::Get().Shutdown();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -215,6 +233,7 @@ void xemu_hud_update(void)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
     g_input_mgr.Update();
+    XBLiveService::Get().TickPresence();
 
     ImGui::NewFrame();
     ProcessKeyboardShortcuts();

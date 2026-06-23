@@ -30,6 +30,7 @@
 #include "reporting.hh"
 #include "qapi/error.h"
 #include "actions.hh"
+#include "xblive-service.hh"
 
 #include "../xemu-input.h"
 #include "../xemu-notifications.h"
@@ -1134,6 +1135,161 @@ void MainMenuNetworkView::DrawUdpOptions(bool appearing)
     ImGui::PopFont();
 }
 
+MainMenuXBLiveView::MainMenuXBLiveView() : MainMenuTabView()
+{
+}
+
+void MainMenuXBLiveView::Draw()
+{
+    XBLiveService &service = XBLiveService::Get();
+    service.LoadSession();
+    XBLiveServiceState state = service.Snapshot();
+
+    if (m_cloud_dir.empty()) {
+        m_cloud_dir = service.DefaultCloudSavesDirectory();
+    }
+
+    SectionTitle("Profile");
+    ImGui::PushFont(g_font_mgr.m_menu_font_small);
+    if (state.signed_in) {
+        ImGui::Text("Signed in as %s",
+                    state.username.empty() ? "(unknown)" : state.username.c_str());
+        if (!state.email.empty()) {
+            ImGui::Text("Email: %s", state.email.c_str());
+        }
+        ImGui::TextWrapped("%s", state.auth_message.empty() ?
+                           "XB.Live session is active." : state.auth_message.c_str());
+
+        if (state.busy_refresh) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button(ICON_FA_ARROWS_ROTATE " Refresh")) {
+            service.RefreshProfile(false);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Refresh Service Cache")) {
+            service.RefreshProfile(true);
+        }
+        if (state.busy_refresh) {
+            ImGui::EndDisabled();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Sign Out")) {
+            service.Logout();
+        }
+    } else {
+        ImGui::TextWrapped("%s", state.auth_message.empty() ?
+                           "Sign in with your XB.Live account." :
+                           state.auth_message.c_str());
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("Email", &m_email);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("Password", &m_password, ImGuiInputTextFlags_Password);
+        if (state.busy_login) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button(ICON_FA_RIGHT_TO_BRACKET " Sign In")) {
+            service.Login(m_email, m_password);
+        }
+        if (state.busy_login) {
+            ImGui::EndDisabled();
+        }
+    }
+    ImGui::PopFont();
+
+    SectionTitle("XB.Live");
+    ImGui::PushFont(g_font_mgr.m_menu_font_small);
+    ImGui::Text("Friends: %d", state.friends_count);
+    ImGui::SameLine();
+    ImGui::Text("Games: %d", state.games_count);
+    ImGui::SameLine();
+    ImGui::Text("Messages: %d", state.messages_count);
+    ImGui::Text("Events: %d", state.events_count);
+    ImGui::SameLine();
+    ImGui::Text("Active games: %d", state.active_games_count);
+    ImGui::Text("Achievements: %d", state.achievements_count);
+    ImGui::SameLine();
+    ImGui::Text("Gamerscore: %d", state.gamerscore);
+    ImGui::Text("Games played: %d", state.games_played_count);
+    ImGui::SameLine();
+    ImGui::Text("Leaderboard ranks: %d", state.leaderboard_rank_count);
+    ImGui::Text("Social inbox: %d", state.social_inbox_count);
+    ImGui::SameLine();
+    ImGui::Text("Conversations: %d", state.conversations_count);
+    ImGui::Text("Messageable friends: %d", state.messageable_friends_count);
+    ImGui::SameLine();
+    ImGui::Text("Friend requests: %d", state.friend_requests_count);
+    ImGui::SameLine();
+    ImGui::Text("Blocks: %d", state.blocks_count);
+    ImGui::Text("Activity history: %d / %d points",
+                state.activity_24h_points,
+                state.activity_7d_points);
+    if (!state.linked_gamertag.empty()) {
+        ImGui::Text("Linked gamertag: %s", state.linked_gamertag.c_str());
+    }
+    if (!state.current_game.empty()) {
+        ImGui::Text("Current XB.Live game: %s", state.current_game.c_str());
+    } else if (!state.last_played_game.empty()) {
+        ImGui::Text("Last XB.Live game: %s", state.last_played_game.c_str());
+    }
+    if (!state.profile_message.empty()) {
+        ImGui::TextWrapped("%s", state.profile_message.c_str());
+    }
+    ImGui::PopFont();
+
+    SectionTitle("Presence");
+    ImGui::PushFont(g_font_mgr.m_menu_font_small);
+    if (state.presence_active) {
+        ImGui::Text("Live session: %s %s",
+                    state.presence_title_id.c_str(),
+                    state.presence_game_name.c_str());
+    } else {
+        ImGui::Text("Live session: Offline");
+    }
+    if (!state.presence_message.empty()) {
+        ImGui::TextWrapped("%s", state.presence_message.c_str());
+    }
+    if (state.presence_active) {
+        if (ImGui::Button(ICON_FA_TOWER_BROADCAST " Send Offline")) {
+            service.ForcePresenceOffline("manual");
+        }
+    }
+    ImGui::PopFont();
+
+    SectionTitle("Cloud Saves");
+    ImGui::PushFont(g_font_mgr.m_menu_font_small);
+    FilePicker("Cloud archive directory", m_cloud_dir.c_str(), nullptr, 0, true,
+               [this](const char *path) {
+                   m_cloud_dir = path;
+               });
+    ImGui::TextWrapped("EEPROM: %s",
+                       (g_config.sys.files.eeprom_path &&
+                        g_config.sys.files.eeprom_path[0]) ?
+                           g_config.sys.files.eeprom_path : "(not set)");
+    if (!state.xbox_live_profile_sync_status.empty()) {
+        ImGui::Text("Xbox Live profile sync: %s",
+                    state.xbox_live_profile_sync_status.c_str());
+    }
+    if (!state.cloud_message.empty()) {
+        ImGui::TextWrapped("%s", state.cloud_message.c_str());
+    }
+
+    if (!state.signed_in || state.busy_cloud_push || state.busy_cloud_pull) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button(ICON_FA_CLOUD_ARROW_UP " Push Local Archives")) {
+        service.PushCloudArchives(m_cloud_dir);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_CLOUD_ARROW_DOWN " Pull Remote Archives")) {
+        service.PullCloudArchives(m_cloud_dir);
+    }
+    if (!state.signed_in || state.busy_cloud_push || state.busy_cloud_pull) {
+        ImGui::EndDisabled();
+    }
+    ImGui::PopFont();
+}
+
 MainMenuSnapshotsView::MainMenuSnapshotsView() : MainMenuTabView()
 {
     xemu_snapshots_mark_dirty();
@@ -1671,8 +1827,9 @@ void MainMenuAboutView::Draw()
     ImGui::Text("for more information");
 }
 
-MainMenuTabButton::MainMenuTabButton(std::string text, std::string icon)
-    : m_icon(icon), m_text(text)
+MainMenuTabButton::MainMenuTabButton(std::string text, std::string icon,
+                                     GLuint *icon_texture)
+    : m_icon(icon), m_text(text), m_icon_texture(icon_texture)
 {
 }
 
@@ -1689,16 +1846,49 @@ bool MainMenuTabButton::Draw(bool selected)
                           selected ? col : IM_COL32(32, 32, 32, 255));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive,
                           selected ? col : IM_COL32(32, 32, 32, 255));
-    int p = ImGui::GetTextLineHeight() * 0.5;
+    float line_height = ImGui::GetTextLineHeight();
+    float p = line_height * 0.5f;
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(p, p));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5));
     ImGui::PushFont(g_font_mgr.m_menu_font);
 
-    ImVec2 button_size = ImVec2(-FLT_MIN, 0);
-    auto text = string_format("%s %s", m_icon.c_str(), m_text.c_str());
     ImGui::PushID(this);
-    bool status = ImGui::Button(text.c_str(), button_size);
+    if (!m_icon_texture) {
+        auto text = string_format("%s %s", m_icon.c_str(), m_text.c_str());
+        bool status = ImGui::Button(text.c_str(), ImVec2(-FLT_MIN, 0));
+        ImGui::PopID();
+        ImGui::PopFont();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(3);
+        return status;
+    }
+
+    ImVec2 button_size = ImVec2(-FLT_MIN, line_height + p * 2.0f);
+    bool status = ImGui::Button("###MainMenuTabButton", button_size);
+    ImVec2 bb_min = ImGui::GetItemRectMin();
+    ImVec2 bb_max = ImGui::GetItemRectMax();
+    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+    ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
+    float text_x = bb_min.x + p +
+                   ImGui::CalcTextSize(ICON_FA_NETWORK_WIRED " ").x;
+    float icon_slot_width = text_x - (bb_min.x + p);
+    float icon_size = line_height * 1.35f;
+    float icon_center_x = bb_min.x + p + icon_slot_width * 0.5f;
+    ImVec2 icon_min(icon_center_x - icon_size * 0.5f,
+                    bb_min.y + (bb_max.y - bb_min.y - icon_size) * 0.5f);
+    ImVec2 icon_max(icon_min.x + icon_size, icon_min.y + icon_size);
+
+    if (*m_icon_texture) {
+        draw_list->AddImage((ImTextureID)(intptr_t)*m_icon_texture,
+                            icon_min, icon_max, ImVec2(0, 0), ImVec2(1, 1),
+                            text_col);
+    }
+
+    ImVec2 text_size = ImGui::CalcTextSize(m_text.c_str());
+    ImVec2 text_pos(text_x,
+                    bb_min.y + (bb_max.y - bb_min.y - text_size.y) * 0.5f);
+    draw_list->AddText(text_pos, text_col, m_text.c_str());
     ImGui::PopID();
     ImGui::PopFont();
     ImGui::PopStyleVar(3);
@@ -1712,6 +1902,7 @@ MainMenuScene::MainMenuScene()
       m_display_button("Display", ICON_FA_TV),
       m_audio_button("Audio", ICON_FA_VOLUME_HIGH),
       m_network_button("Network", ICON_FA_NETWORK_WIRED),
+      m_xblive_button("XB.Live", "", &g_xblive_glyph_tex),
       m_snapshots_button("Snapshots", ICON_FA_CLOCK_ROTATE_LEFT),
       m_system_button("System", ICON_FA_MICROCHIP),
       m_about_button("About", ICON_FA_CIRCLE_INFO)
@@ -1723,6 +1914,7 @@ MainMenuScene::MainMenuScene()
     m_tabs.push_back(&m_display_button);
     m_tabs.push_back(&m_audio_button);
     m_tabs.push_back(&m_network_button);
+    m_tabs.push_back(&m_xblive_button);
     m_tabs.push_back(&m_snapshots_button);
     m_tabs.push_back(&m_system_button);
     m_tabs.push_back(&m_about_button);
@@ -1732,6 +1924,7 @@ MainMenuScene::MainMenuScene()
     m_views.push_back(&m_display_view);
     m_views.push_back(&m_audio_view);
     m_views.push_back(&m_network_view);
+    m_views.push_back(&m_xblive_view);
     m_views.push_back(&m_snapshots_view);
     m_views.push_back(&m_system_view);
     m_views.push_back(&m_about_view);
@@ -1747,17 +1940,17 @@ void MainMenuScene::ShowSettings()
 
 void MainMenuScene::ShowSnapshots()
 {
-    SetNextViewIndexWithFocus(5);
+    SetNextViewIndexWithFocus(6);
 }
 
 void MainMenuScene::ShowSystem()
 {
-    SetNextViewIndexWithFocus(6);
+    SetNextViewIndexWithFocus(7);
 }
 
 void MainMenuScene::ShowAbout()
 {
-    SetNextViewIndexWithFocus(7);
+    SetNextViewIndexWithFocus(8);
 }
 
 void MainMenuScene::SetNextViewIndexWithFocus(int i)

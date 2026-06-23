@@ -31,6 +31,7 @@
 #include "qemu/qtree.h"
 #include "qapi/error.h"
 #include "tcg/tcg.h"
+#include "tcg/ios-jit.h"
 #include "exec/translation-block.h"
 #include "tcg-internal.h"
 #include "host/cpuinfo.h"
@@ -771,6 +772,9 @@ void tcg_region_init(size_t tb_size, int splitwx, unsigned max_threads)
 
     have_prot = alloc_code_gen_buffer(tb_size, splitwx, &error_fatal);
     assert(have_prot >= 0);
+
+    xemu_ios_universal_jit_prepare_region(region.start_aligned,
+                                          region.total_size);
 
     /* Request large pages for the buffer and the splitwx.  */
     qemu_madvise(region.start_aligned, region.total_size, QEMU_MADV_HUGEPAGE);

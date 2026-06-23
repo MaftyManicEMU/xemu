@@ -115,6 +115,18 @@ public:
     void DrawUdpOptions(bool appearing);
 };
 
+class MainMenuXBLiveView : public virtual MainMenuTabView
+{
+protected:
+    std::string m_email;
+    std::string m_password;
+    std::string m_cloud_dir;
+
+public:
+    MainMenuXBLiveView();
+    void Draw() override;
+};
+
 class MainMenuSnapshotsView : public virtual MainMenuTabView
 {
 protected:
@@ -159,9 +171,11 @@ class MainMenuTabButton
 {
 protected:
     std::string m_icon, m_text;
+    GLuint *m_icon_texture;
 
 public:
-    MainMenuTabButton(std::string text, std::string icon = "");
+    MainMenuTabButton(std::string text, std::string icon = "",
+                      GLuint *icon_texture = nullptr);
     bool Draw(bool selected);
 };
 
@@ -180,6 +194,7 @@ protected:
                                     m_display_button,
                                     m_audio_button,
                                     m_network_button,
+                                    m_xblive_button,
                                     m_snapshots_button,
                                     m_system_button,
                                     m_about_button;
@@ -189,6 +204,7 @@ protected:
     MainMenuDisplayView             m_display_view;
     MainMenuAudioView               m_audio_view;
     MainMenuNetworkView             m_network_view;
+    MainMenuXBLiveView              m_xblive_view;
     MainMenuSnapshotsView           m_snapshots_view;
     MainMenuSystemView              m_system_view;
     MainMenuAboutView               m_about_view;

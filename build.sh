@@ -22,6 +22,63 @@ package_wincross() {
     python3 ./scripts/gen-license.py --platform windows > dist/LICENSE.txt
 }
 
+bundle_macos_dylibs_fallback() {
+    local exe_path="$1"
+    local lib_path="$2"
+    local lib_rpath="$3"
+    local source_lib_dir="$4"
+    local deps=()
+    local dep
+    local seen=" "
+    local i=0
+
+    mkdir -p "$lib_path"
+
+    while IFS= read -r dep; do
+        deps+=("$dep")
+    done < <(otool -L "$exe_path" | awk '/\/opt\/local\/lib\/.*\.dylib/ {print $1}')
+
+    while [ "$i" -lt "${#deps[@]}" ]; do
+        dep="${deps[$i]}"
+        i=$((i + 1))
+
+        local dep_basename="$(basename "$dep")"
+        case "$seen" in
+            *" ${dep_basename} "*) continue ;;
+        esac
+        seen="${seen}${dep_basename} "
+
+        local src="${source_lib_dir}/${dep_basename}"
+        local dst="${lib_path}/${dep_basename}"
+        if [[ ! -e "$src" ]]; then
+            echo "Missing macOS dylib dependency: $src" >&2
+            return 1
+        fi
+
+        cp -L "$src" "$dst"
+        chmod u+w "$dst"
+        install_name_tool -id "@rpath/${dep_basename}" "$dst"
+
+        while IFS= read -r dep; do
+            deps+=("$dep")
+        done < <(otool -L "$dst" | awk '/\/opt\/local\/lib\/.*\.dylib/ {print $1}')
+    done
+
+    while IFS= read -r dep; do
+        dep_basename="$(basename "$dep")"
+        install_name_tool -change "$dep" "@executable_path/${lib_rpath}/${dep_basename}" "$exe_path"
+    done < <(otool -L "$exe_path" | awk '/\/opt\/local\/lib\/.*\.dylib/ {print $1}')
+
+    for bundled_lib in "${lib_path}"/*.dylib; do
+        [[ -e "$bundled_lib" ]] || continue
+        while IFS= read -r dep; do
+            dep_basename="$(basename "$dep")"
+            install_name_tool -change "$dep" "@loader_path/${dep_basename}" "$bundled_lib"
+        done < <(otool -L "$bundled_lib" | awk '/\/opt\/local\/lib\/.*\.dylib/ {print $1}')
+        codesign -s - -f "$bundled_lib"
+    done
+}
+
 package_macos() {
     rm -rf dist
 
@@ -32,11 +89,17 @@ package_macos() {
     lib_rpath=../Libraries/${target_arch}
     cp build/qemu-system-i386 ${exe_path}
 
-    # Copy in in executable dylib dependencies
-    dylibbundler -cd -of -b -x dist/xemu.app/Contents/MacOS/xemu \
-        -d ${lib_path}/ \
-        -p "@executable_path/${lib_rpath}/" \
-        -s ${PWD}/macos-libs/${target_arch}/opt/local/lib/
+    # Copy in executable dylib dependencies
+    if command -v dylibbundler >/dev/null; then
+      dylibbundler -cd -of -b -x dist/xemu.app/Contents/MacOS/xemu \
+          -d ${lib_path}/ \
+          -p "@executable_path/${lib_rpath}/" \
+          -s ${PWD}/macos-libs/${target_arch}/opt/local/lib/
+    else
+      echo "dylibbundler not found; using built-in macOS dylib bundler"
+      bundle_macos_dylibs_fallback "$exe_path" "$lib_path" "$lib_rpath" \
+          "${PWD}/macos-libs/${target_arch}/opt/local/lib"
+    fi
 
     # Fixup some paths dylibbundler missed
     for dep in $(otool -L "$exe_path" | grep -e '/opt/local/' | cut -d' ' -f1); do
@@ -181,6 +244,15 @@ most_recent_macosx_sdk_ver () {
 
   local sdk_path="${macos_sdk_base}/MacOSX${newest_sdk_ver}.sdk"
   if ! test -d "${sdk_path}"; then
+    local xcrun_sdk_path
+    local xcrun_sdk_ver
+    xcrun_sdk_path="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+    xcrun_sdk_ver="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)"
+    if [[ -n "${xcrun_sdk_path}" && -d "${xcrun_sdk_path}" ]] &&
+       LC_ALL=C awk 'BEGIN {exit ('"${xcrun_sdk_ver:-0}"' < '"${min_ver}"')}'; then
+      echo "${xcrun_sdk_path}"
+      return
+    fi
     echo ""
     return
   fi
@@ -229,6 +301,10 @@ case "$platform" in # Adjust compilation options based on platform
                         -isysroot ${sdk}"
         sys_ldflags='-headerpad_max_install_names'
         export PKG_CONFIG_LIBDIR="${lib_prefix}/lib/pkgconfig"
+        unset PKG_CONFIG_PATH
+        unset CMAKE_PREFIX_PATH
+        unset CMAKE_INCLUDE_PATH
+        unset CMAKE_LIBRARY_PATH
         opts="$opts --disable-cocoa --cross-prefix="
         postbuild='package_macos'
         ;;
@@ -242,6 +318,13 @@ case "$platform" in # Adjust compilation options based on platform
         ;;
     win64-cross)
         echo 'Cross-compiling for Windows...'
+        if [[ -z "${CROSSPREFIX}" ]] || ! command -v "${CROSSPREFIX}gcc" >/dev/null; then
+            echo "Windows cross toolchain not found. Set CROSSPREFIX to a MinGW prefix such as x86_64-w64-mingw32.static-." >&2
+            exit 1
+        fi
+        if [[ -z "${CROSSAR}" ]]; then
+            CROSSAR="${CROSSPREFIX}ar"
+        fi
         export AR=${AR:-$CROSSAR}
         sys_cflags='-Wno-error'
         opts="$opts --cross-prefix=$CROSSPREFIX --static"

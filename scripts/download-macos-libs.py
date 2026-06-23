@@ -78,10 +78,10 @@ class LibInstaller:
 		key_filename = 'macports-pubkey.pem'
 		dst_key_filename = os.path.join(self._pkgs_path, key_filename)
 		self.download_file('MacPorts key', PUBKEYURL, dst_key_filename)
-		rmd160 = subprocess.run('openssl rmd160 "' + dst_key_filename + "\" | awk '{print $2}'",
+		rmd160 = subprocess.run('openssl rmd160 "' + dst_key_filename + "\" | awk '{print $NF}'",
 	                            capture_output=True, shell=True,
 	                            check=True).stdout.decode('utf-8').strip()
-		sha1 = subprocess.run('openssl sha1 "' + dst_key_filename + "\" | awk '{print $2}'",
+		sha1 = subprocess.run('openssl sha1 "' + dst_key_filename + "\" | awk '{print $NF}'",
 	                            capture_output=True, shell=True,
 	                            check=True).stdout.decode('utf-8').strip()
 		assert (rmd160 == PUBKEYRMD160 and sha1 == PUBKEYSHA1), 'Invalid MacPorts key'

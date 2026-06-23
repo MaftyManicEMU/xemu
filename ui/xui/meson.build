@@ -21,6 +21,7 @@ xemu_ss.add(files(
   'viewport-manager.cc',
   'welcome.cc',
   'widgets.cc',
+  'xblive-service.cc',
 ))
 
 if host_os == 'windows'

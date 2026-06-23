@@ -31,6 +31,8 @@
 #include <misc/cpp/imgui_stdlib.h>
 #include <stb_image.h>
 
+// osdep.h must remain outside extern "C"; it includes GLib/system headers
+// that may contain C++ declarations on Windows.
 #include "qemu/osdep.h"
 
 extern "C" {

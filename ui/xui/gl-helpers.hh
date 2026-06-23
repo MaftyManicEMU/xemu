@@ -39,7 +39,7 @@ public:
 };
 
 extern Fbo *controller_fbo, *xmu_fbo, *logo_fbo;
-extern GLuint g_icon_tex;
+extern GLuint g_icon_tex, g_xblive_glyph_tex;
 
 void InitCustomRendering(void);
 void RenderLogo(uint32_t time);
